@@ -1,7 +1,7 @@
 package Harold::Event;
 use KiokuDB::Class;
 use Module::Pluggable sub_name => '_plugins';
-use Module::Load;
+use Module::Runtime 'use_module';
 
 has plugins => (
     traits => ['Hash'],
@@ -16,8 +16,7 @@ has plugins => (
 sub raise {
     my ($self, $type, @params) = @_;
     my $class = $self->get_plugin($type) or die "No such type $type";
-    load $class;
-    return $class->new( @params );
+    return use_module($class)->new(@params);
 }
 
 sub _build_plugins {
