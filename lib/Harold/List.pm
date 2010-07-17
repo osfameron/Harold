@@ -112,7 +112,7 @@ sub cycle {
 
 sub concat {
     my ($self, $list) = @_;
-    return $self->Foldr( sub { $_[1]->Prepend($_[0]) }, $list );
+    return $self->foldr( sub { $_[1]->prepend($_[0]) }, $list );
 }
 
 sub take {
@@ -157,7 +157,7 @@ sub foldr {
 }
 sub cycle {
     my ($self, $list) = @_;
-    return $list->Cycle();
+    return $list->cycle();
 }
 
 1;
