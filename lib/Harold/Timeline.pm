@@ -28,12 +28,12 @@ has make_list => (
 
 has from_feed_up_to => (
     is  => 'rw',
-    isa => 'Maybe[Harold::Event]',
+    isa => 'Maybe[Harold::Event::Base]',
 );
 
 has from_root_up_to => (
     is => 'rw',
-    isa => 'Maybe[Harold::Event]',
+    isa => 'Maybe[Harold::Event::Base]',
 );
 
 sub create {
