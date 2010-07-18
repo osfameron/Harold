@@ -3,7 +3,8 @@ use warnings;
 use inc::Module::Install 0.77;
 
 name 'Harold';
-all_from 'lib/Harold.pm';
+all_from    'lib/Harold.pm';
+readme_from 'lib/Harold.pm'; # requires "Module::Install::ReadmeFromPod" on developer side
 
 requires "Moose" => "0.64";
 requires "namespace::clean";
@@ -16,5 +17,6 @@ requires "SQL::Translator"; # for deploy of DBIC backend
 requires "Module::Pluggable";
 requires "XML::Atom";
 requires "MooseX::Types::DateTime";
+
 
 WriteAll();
