@@ -214,8 +214,6 @@ t/timeline.t
 
  (C) osfameron@cpan.org 2010
 
-=head1
-
 =cut
 
 1;
