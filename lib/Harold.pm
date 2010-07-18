@@ -55,6 +55,10 @@ And to report ...
 
 =head1 DESCRIPTION (bit of a ramble, really)
 
+I<Once, when asked what represented the greatest challenge for a statesman,
+British Prime Minister Harold Macmillan responded in his typically languid
+fashion, "Events, my dear boy, events."> [1]
+
 Guy came up with a cool idea for our app's front-page: to show anonymised
 information from all the live instances. Things like
 
@@ -186,10 +190,25 @@ knowledge.
 
 =head1 SEE ALSO
 
- * L<KiokuDB>
- * L<DBIx::Class>
- * L<PerlX::MethodCallWithBlock>
- * t/timeline.t
+=over 4
+
+=item *
+[1] Never Had It So Good: A History of Britain from Suez to the Beatles by Dominic Sandbrook 
+L<http://www.hoover.org/publications/policy-review/article/7427>
+
+=item *
+L<KiokuDB>
+
+=item *
+L<DBIx::Class>
+
+=item *
+L<PerlX::MethodCallWithBlock>
+
+=item *
+t/timeline.t
+
+=back
 
 =head1 AUTHOR and COPYRIGHT
 

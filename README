@@ -47,6 +47,10 @@ SYNOPSIS
      } # end kioku scope
 
 DESCRIPTION (bit of a ramble, really)
+    *Once, when asked what represented the greatest challenge for a
+    statesman, British Prime Minister Harold Macmillan responded in his
+    typically languid fashion, "Events, my dear boy, events."* [1]
+
     Guy came up with a cool idea for our app's front-page: to show
     anonymised information from all the live instances. Things like
 
@@ -172,10 +176,17 @@ DESCRIPTION (bit of a ramble, really)
     reuse lots of existing knowledge.
 
 SEE ALSO
-     * L<KiokuDB>
-     * L<DBIx::Class>
-     * L<PerlX::MethodCallWithBlock>
-     * t/timeline.t
+    *   [1] Never Had It So Good: A History of Britain from Suez to the
+        Beatles by Dominic Sandbrook
+        <http://www.hoover.org/publications/policy-review/article/7427>
+
+    *   KiokuDB
+
+    *   DBIx::Class
+
+    *   PerlX::MethodCallWithBlock
+
+    *   t/timeline.t
 
 AUTHOR and COPYRIGHT
      (C) osfameron@cpan.org 2010
