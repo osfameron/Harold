@@ -17,17 +17,12 @@ has 'foo' => (
 package main;
 
 my $bar = Bar->new;
-my $db = $bar->db;
-my $admin   = $db->resultset('User')->create( { name => 'Administrator' } );
-my $johndoe = $db->resultset('User')->create( { name => 'John Doe' } );
-my $dvd     = $db->resultset('Dvd') ->create( { name => 'Dogville', user => $johndoe } );
 
-my $foo = Foo->new( foo => $dvd );
-my $kioku = $bar->kioku;
-$kioku->store(foo => $foo );
+$bar->create_user('John Doe');
 
-my $foo2 = $kioku->lookup( 'foo' );
-warn Dumper( { $foo2->foo->get_columns } );
+local $Data::Dumper::Maxdepth = 2;
+local $Data::Dumper::Indent = 1;
+say $bar->root_timeline->list->head->xml_atom_entry->as_xml;
 
 __END__
 
