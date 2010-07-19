@@ -2,10 +2,6 @@ package Bar;
 use Moose;
 use Method::Signatures::Simple;
 
-# Note that using Bar will *deploy* an in-memory app
-# if you're cargo-culting this test to create an actual app,
-# you'd want to remove the initialization/deploying from the default subs!
-
 has config => (
     is => 'rw',
     isa => 'HashRef',
@@ -23,14 +19,10 @@ has db => (
     default => sub {
         my $self = shift;
         require BarDB;
-        my $db = BarDB->connect( $self->config->{dsn} );
-        $db->deploy(); # for test
-
-        $db->resultset('User')->create({ name => 'admin' });
-
-        return $db;
+        BarDB->connect( $self->config->{dsn} );
     },
 );
+
 
 has event => (
     is => 'ro',
@@ -52,12 +44,25 @@ has kioku => (
         my $kioku = KiokuDB->connect( 
             $self->config->{dsn},
             schema => 'BarDB',
-            create => 1,
         );
         $self->scope( $kioku->new_scope );
         return $kioku;
     },
 );
+
+method deploy {
+    my $db = $self->db;
+    $db->deploy;
+    $db->resultset('User')->create({ name => 'admin' });
+
+    $self->kioku->backend->deploy;
+
+    require Harold::Timeline;
+    Harold::Timeline->create(
+        $self->kioku,
+        store_as => 'root',
+    );
+}
 
 has root_timeline => (
     is => 'ro',
@@ -65,11 +70,7 @@ has root_timeline => (
     lazy => 1,
     default => sub {
         my $self = shift;
-        require Harold::Timeline;
-        return Harold::Timeline->create(
-            $self->kioku,
-            store_as => 'root',
-        );
+        $self->kioku->lookup('root');
     },
 );
 

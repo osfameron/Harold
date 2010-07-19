@@ -17,6 +17,7 @@ has 'foo' => (
 package main;
 
 my $bar = Bar->new;
+$bar->deploy;
 
 $bar->create_user('John Doe');
 
