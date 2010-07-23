@@ -50,20 +50,6 @@ has kioku => (
     },
 );
 
-method deploy {
-    my $db = $self->db;
-    $db->deploy;
-    $db->resultset('User')->create({ name => 'admin' });
-
-    $self->kioku->backend->deploy;
-
-    require Harold::Timeline;
-    Harold::Timeline->create(
-        $self->kioku,
-        store_as => 'root',
-    );
-}
-
 has root_timeline => (
     is => 'ro',
     isa => 'Harold::Timeline',
@@ -88,6 +74,35 @@ has logged_in_user => (
         $self->db->resultset('User')->find({ name => 'admin' });
     },
 );
+
+method deploy {
+    my $db = $self->db;
+    $db->deploy;
+    $db->resultset('User')->create({ name => 'admin' });
+
+    $self->kioku->backend->deploy;
+
+    require Harold::Timeline;
+    Harold::Timeline->create(
+        $self->kioku,
+        store_as => 'root',
+    );
+}
+
+method get_timeline ($id) {
+    my $timeline = $self->kioku->lookup($id);
+    die "No such timeline ($id)" unless $timeline;
+    die "Not a timeline ($id)"   unless $timeline->isa('Harold::Timeline');
+    return $timeline;
+}
+
+method create_timeline ($id, %params) {
+    return Harold::Timeline->create(
+        $self->kioku,
+        store_as => $id,
+        %params,
+    );
+}
 
 method login ($user) {
     $self->logged_in_user( $user );

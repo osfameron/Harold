@@ -22,7 +22,8 @@ has list => (
 );
 
 has make_list => (
-    is  => 'rw',
+    traits => ['Code'], 
+    handles => { make_list => 'execute' },
     isa => 'CodeRef',
 );
 
@@ -81,7 +82,7 @@ sub update {
                 sub { refaddr $_[0] != refaddr $from_feed_up_to })
             : $from->list->take(100); # TODO make more flexible
 
-        my $new_list = $self->make_list->( $new );
+        my $new_list = $self->make_list( $new );
 
         my $whole_list = $new_list->concat($self->list);
 
