@@ -1,0 +1,12 @@
+For tailing an infinite list, using a bit of a hack
+13:03 <aavogt> but maybe            > do t <- forkIO (do { computation `seq` 
+  putMVar v computation });  threadDelay 123; e <- tryTakeMVar v; when 
+  (isNothing e) (killThread t)
+
+13:00 <quicksilver> osfameron: I would model it explicitly rather than trying 
+                    to 'hack into' the underlying lazy evaluation.
+13:01 <quicksilver> osfameron: e.g. an explicit queue of work and well 
+                    understood ways to access the currently completed jobs.
+
+12:25 <amcewen> osfameron: have you seen http://www.spark-project.org/ - 
+                "Hadoop-alike in Scala"
