@@ -4,7 +4,7 @@ use parent 'DBIx::Class::Core';
 
 __PACKAGE__->load_components(qw/ /);
 
-__PACKAGE__->table('raw');
+__PACKAGE__->table('misc');
 
 __PACKAGE__->add_columns(
     id => {

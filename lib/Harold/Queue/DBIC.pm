@@ -12,7 +12,7 @@ role Harold::Connection {
     requires 'createQ'; # (Str :$name, Str|Harold::Queue :$from, Str :$table) {
     requires 'deriveQ'; # ...
 
-    method get_or_createQ (Str :$name, Harold::Queue :$from, Str :$table) {
+    method get_or_createQ (Str :$name, Harold::Queue :$from, Str :$tablesource) {
         return $self->getQ($name) 
             // $self->createQ(@_);
     }
@@ -41,12 +41,17 @@ class Harold::Connection::DBIC with Harold::Connection {
         isa     => 'Str',
         default => 'Queues',
     );
+    has default_tablesource => (
+        is      => 'ro',
+        isa     => 'Str',
+        default => 'Misc',
+    );
 
     has _queues => (
         traits  => ['Hash'],
         isa     => 'HashRef[Harold::Queue]',
         is      => 'ro',
-        default => sub {},
+        default => sub {{}},
         handles => {
             _getQ => 'get',
             _setQ => 'set',
@@ -58,7 +63,7 @@ class Harold::Connection::DBIC with Harold::Connection {
         traits  => ['Hash'],
         isa     => 'HashRef[DBIx::Class::ResultSet]',
         is      => 'ro',
-        default => sub {},
+        default => sub {{}},
         handles => {
             _get_rs => 'get',
             _set_rs => 'set',
@@ -95,34 +100,41 @@ class Harold::Connection::DBIC with Harold::Connection {
         return $self->_newQ($name, row=>$row);
     }
 
-    method createQ (Str :$name, Harold::Queue :$from, Str :$table, HashRef :$opts) {
+    method createQ (Str :$name, Str :$tablesource, :$from, HashRef :$opts) {
         $name //= do {
             require Data::UUID;
             Data::UUID->new->create_hex;
         };
 
+        $tablesource //= $self->default_tablesource;
+
         my $row = $self->dbic->resultset($self->_table_name)
             ->create({
                 name  => $name,
-                table => $table // $self->default_table,
-                from  => $from ? $from->queue_id : undef,
-                index => 0,
+                tablesource => $tablesource,
+                $from ? (from => $from, pos => 0) : (),
             }); # will die on duplicate
 
-        return $self->_newQ(name=>$name, row=>$row, from=>$from, opts=>$opts);
+        return $self->_newQ(
+            name=>$name, 
+            row=>$row, 
+            tablesource=>$tablesource,
+            $from ? (from=>$from) : (), 
+            $opts ? (opts=>$opts) : (),
+        );
     }
 
-    method _newQ (Str :$name!, $row!, Harold::Queue :$from, :$table, HashRef :$opts) {
+    method _newQ (Str :$name!, $row!, Harold::Queue :$from, :$tablesource, HashRef :$opts) {
 
-        $table //= $row->table;
+        $tablesource //= $row->tablesource;
 
-        my $rs = $self->dbic->resultset($table)
-            or die "No such table $table";
+        my $rs = $self->dbic->resultset($tablesource)
+            or die "No such tablesource $tablesource";
 
         if ($rs->result_source->has_column('queue_id')) {
             $rs = $rs->search({ queue_id => $row->id });
         }
-        $self->_set_rs( $table, $rs );
+        $self->_set_rs( $tablesource, $rs );
 
         if (my $from_row = $row->from) {
             $from //= $self->getQ($from_row->name);
@@ -133,7 +145,7 @@ class Harold::Connection::DBIC with Harold::Connection {
             name       => $name,
             connection => $self,
             queue_id   => $row->queue_id,
-            table      => $table,
+            tablesource      => $tablesource,
         );
         if ($from) {
             $class = $self->derived_class;
@@ -141,7 +153,7 @@ class Harold::Connection::DBIC with Harold::Connection {
                 %data,
                 from       => $from,
                 code       => $self->inflate_code($row->code),
-                index      => $row->index,
+                pos      => $row->pos,
             );
         }
         else {
@@ -324,7 +336,7 @@ class Harold::Queue::Derived extends Harold::Queue {
         is  => 'ro',
         isa => 'Harold::Queue',
     );
-    has _index => (
+    has pos => (
         is      => 'rw',
         isa     => 'Int',
         default => 0,
@@ -351,11 +363,11 @@ class Harold::Queue::Derived extends Harold::Queue {
 
     method update {
         $self->from->update;
-        my $new_index = $self->from->length;
+        my $new_pos = $self->from->length;
 
         # TODO handle case where another client has updated us in the meantime
 
-        my @list  = $self->from->lrange( $self->_index, -1 );
+        my @list  = $self->from->lrange( $self->pos, -1 );
         my $stack = [ $self->stack_as_array ];
         my $code = $self->code;
         for my $elem (@list) {
@@ -370,8 +382,8 @@ class Harold::Queue::Derived extends Harold::Queue {
         for my $elem (@$stack) {
             $self->add_to_stack($elem);
         }
-        $self->_index( $new_index );
-        $self->connection->hset( $self->meta_name, 'index', $self->from->name );
+        $self->pos( $new_pos );
+        $self->connection->hset( $self->meta_name, 'pos', $self->from->name );
     }
 }
 
