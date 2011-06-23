@@ -1,6 +1,8 @@
 # another play with Harold, using Redis queues
 
 use MooseX::Declare;
+use Moose::Util::TypeConstraints;
+BEGIN { class_type 'Redis' }
 
 class Queue {
     use MooseX::MultiMethods;
@@ -39,6 +41,38 @@ class Queue {
 
     method meta_name {
         return '__META__:' . $self->name;
+    }
+
+    method fetch ($self_or_class: Str $name, Redis :$connection) {
+        if (ref $self_or_class) {
+            $connection //= $self_or_class->connection;
+        }
+        my $self = $self_or_class->new(
+            connection => $connection,
+            name       => $name,
+        );
+
+        $connection = $self->connection;
+        die "No such list $name" unless $connection->exists($name);
+
+        my $class;
+        if ($connection->exists($self->meta_name)) {
+            if($connection->hexists($self->meta_name, 'from')) {
+                $class = __PACKAGE__ . '::Derived';
+                $self->{code} = eval
+                    $connection->hget($self->meta_name, 'code');
+                bless $self, $class;
+
+                $self->update;
+            }
+        }
+
+        if (!$class) {
+            $class = __PACKAGE__ . '::Primary';
+            bless $self, $class;
+        }
+
+        return $self; 
     }
 
     method length () {
@@ -143,6 +177,7 @@ class Queue::Derived extends Queue {
 # rather use derive_from() or fetch()
 
     use MooseX::MultiMethods;
+    use Data::Dump::Streamer;
 
     has code => (
         is  => 'ro',
@@ -183,7 +218,13 @@ class Queue::Derived extends Queue {
             $name ? ( name => $name ) : (),
         );
         # 
-        $self->connection->hset( $self->meta_name, 'from', $from->name );
+        $self->connection->hset( 
+            $self->meta_name, from => $from->name );
+        my $codestring = Dump($code)->Out;
+        warn "RARR $codestring";
+        $self->connection->hset( 
+            $self->meta_name, code => $codestring);
+
         $self->update;
         return $self;
     }
