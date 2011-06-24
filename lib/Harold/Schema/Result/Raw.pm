@@ -26,7 +26,7 @@ __PACKAGE__->add_columns(
     json => {
         data_type   => 'text',
         is_nullable => 0,
-        serializer_class => 'JSON',
+        serializer_class => 'JSON_XS',
     },
 );
 

@@ -16,7 +16,7 @@ __PACKAGE__->add_columns(
     from_id => {
         data_type         => 'integer',
         size              => 16,
-        is_nullable       => 0,
+        is_nullable       => 0, 
     },
     queue_id => {
         data_type         => 'integer',
@@ -35,7 +35,7 @@ __PACKAGE__->add_columns(
     json => {
         data_type   => 'text',
         is_nullable => 0,
-        serializer_class => 'JSON',
+        serializer_class => 'JSON_XS',
     },
 );
 

@@ -1,3 +1,9 @@
+package DateTime;
+sub TO_JSON {
+    my $self = shift;
+    return "$self";
+}
+
 use MooseX::Declare;
 use Moose::Util::TypeConstraints;
 BEGIN { 
@@ -12,13 +18,15 @@ role Harold::Connection {
     requires 'createQ'; # (Str :$name, Str|Harold::Queue :$from, Str :$table) {
     requires 'deriveQ'; # ...
 
-    method get_or_createQ (Str :$name, Harold::Queue :$from, Str :$tablesource) {
+    method get_or_createQ (%opts) {
+        my $name = $opts{name};
         return $self->getQ($name) 
-            // $self->createQ(@_);
+            // $self->createQ(%opts);
     }
 
     requires 'range'; # (Harold::Queue $queue, Int $from, Int $to)
     requires 'push';  # (Harold::Queue $queue, $value)
+    requires 'clear';
 
     # using Data::Dump::Streamer, see caveats!
     method inflate_code (Str $codestring) {
@@ -53,8 +61,9 @@ class Harold::Connection::DBIC with Harold::Connection {
         is      => 'ro',
         default => sub {{}},
         handles => {
-            _getQ => 'get',
-            _setQ => 'set',
+            _getQ   => 'get',
+            _setQ   => 'set',
+            _clearQ => 'clear',
         },
 
     );
@@ -81,6 +90,7 @@ class Harold::Connection::DBIC with Harold::Connection {
             JSON::XS
                 ->new
                 ->convert_blessed(1)
+                ->allow_blessed(1)
         },
         handles => {
             encode_json => 'encode',
@@ -95,12 +105,15 @@ class Harold::Connection::DBIC with Harold::Connection {
 
     method getQ (Str $name) {
         if (my $queue = $self->_getQ($name)) {
+            $queue->update;
             return $queue;
         }
 
         my $row = $self->getRow($name) or return;
 
-        return $self->_newQ($name, $row);
+        my $queue = $self->_newQ($name, $row);
+        $queue->update;
+        return $queue;
     }
 
     method createQ (Str :$name?, Str :$tablesource?, :$from?, CodeRef :$code?, HashRef :$opts?) {
@@ -168,7 +181,7 @@ class Harold::Connection::DBIC with Harold::Connection {
         return $queue;
     }
 
-    # method createQ (Str :$name?, Str :$tablesource?, :$from?, HashRef :$opts?) {
+    # method createQ (Str :$name?, Str :$tablesource?, :$from?, HashRef :$opts?)
     method deriveQ (Harold::Queue $from, CodeRef $code, HashRef $opts? = {}) {
 
         my $queue = $self->createQ(
@@ -177,7 +190,7 @@ class Harold::Connection::DBIC with Harold::Connection {
             code       => $code,
         );
 
-        $queue->update;
+        $queue->update();
         return $queue;
     }
 
@@ -192,7 +205,7 @@ class Harold::Connection::DBIC with Harold::Connection {
             }
         })->all;
 
-        # should do something like HashRefInflator?
+        # should do something like HashRefInflator? i.e. custm resultclass
         return map {
             my %columns = $_->get_inflated_columns;
             my %json = %{ delete $columns{json} };
@@ -215,7 +228,8 @@ class Harold::Connection::DBIC with Harold::Connection {
             {
                select => \'max(id)',
                as     => 'maxid',
-            })->single->get_column('maxid');
+            })->single->get_column('maxid')
+        // 0;
     }
 
     method push (Harold::Queue $queue, HashRef $hash) {
@@ -226,7 +240,7 @@ class Harold::Connection::DBIC with Harold::Connection {
         my %hash = (%$hash, queue_id => $queue->queue_id);
 
         if (my $id = delete $hash{id}) {
-            # we don't overwrite the primary key, but store it in "from_id"
+            # we don't overwrite the primary key, but store it in ""
             # (unless from_is is already set, in which case we simply pass that value through)
             $hash{from_id} //= $id;
         }
@@ -242,11 +256,16 @@ class Harold::Connection::DBIC with Harold::Connection {
         $rs->create( \%data );
     }
 
+    method clear(Harold::Queue $queue) {
+        my $rs = $self->_get_rs($queue->name)
+            or die "No resultset for queue " . $queue->name;
+        $rs->delete();
+    }
 }
 
 class Harold::Queue {
     use MooseX::MultiMethods;
-    use JSON::XS;
+    use Data::Dumper;
 
     has queue_id => (
         is => 'ro',
@@ -263,6 +282,10 @@ class Harold::Queue {
         isa     => 'Harold::Connection',
         handles => [ ],
     );
+
+    method _clear {
+        $self->connection->clear($self);
+    }
 
     method maxpos () {
         return $self->connection->maxpos($self);
@@ -288,72 +311,77 @@ class Harold::Queue {
     }
 
     # trivial derivation
-    # method deriveQ (Harold::Queue $from, CodeRef $code, Str $name?, HashRef $opts?) {
-    method copy (Str $name?, HashRef $opts?) {
+    # method deriveQ (Harold::Queue $from, CodeRef $code, Str $name?, HashRef $opts?)
+    method copy (Str $name, %opts) {
         my $code = 
             sub {
                 my ($element, $stack) = @_;
                 return ([$element], $stack);
             };
 
-        $self->connection->deriveQ( $self, $code, { name => $name, %{ $opts || {} }});
+        $self->connection->deriveQ( $self, $code, { %opts, name => $name });
     }
 
-    method map (Str :$name, CodeRef :$code, HashRef :$opts) {
-        $self->connection->_deriveQ(
-            %{$opts || {}},
-            from => $self,
-            name => $name,
-            code => sub {
+    method map (Str $name, %opts) {
+        my $map_code = $opts{code} or die "No code provided";
+        my $code = sub {
                 my ($element, $stack) = @_;
-                return ([$code->($element)], $stack);
-            },
+                return ([$map_code->($element)], $stack);
+            };
+
+        $self->connection->deriveQ(
+            $self, $code,
+            { %opts, name => $name }
         );
     }
-    method filter (Str :$name, CodeRef :$predicate, HashRef :$opts) {
-       $self->connection->_deriveQ(
-            %{$opts || {}},
-            from => $self,
-            name => $name,
-            code => sub {
-                my ($element, $stack) = @_;
-                my $result = $predicate->($element) ? [$element] : [];
-                return ($result, $stack);
-            },
+
+    method filter (Str $name, %opts) {
+        my $predicate = $opts{code} or die "No code provided";
+        my $code = sub {
+            my ($element, $stack) = @_;
+            my $result = $predicate->($element) ? [$element] : [];
+            return ($result, $stack);
+        };
+
+       $self->connection->deriveQ(
+            $self, $code,
+            { %opts, name => $name },
         );
     }
-    method concatMap (Str :$name, CodeRef :$code, HashRef :$opts) {
-        # coderef must return an arrayref!
-        $self->connection->_deriveQ(
-            %{$opts || {}},
-            from => $self,
-            name => $name,
-            code => sub {
+
+    method concatMap (Str $name, %opts) {
+        my $map_code = $opts{code} or die "No code provided";
+        my $code = sub {
                 my ($element, $stack) = @_;
-                my $result = $code->($element);
+                my $result = $map_code->($element);
                 die ref $result unless ref $result eq 'ARRAY';
                 return ($result, $stack);
-            },
+            };
+        $self->connection->deriveQ(
+            $self, $code,
+            { %opts, name => $name }
         );
     }
 
     # now let's actually use this stack thing then...
-    method group (Str :$name, CodeRef :$code, HashRef :$opts) {
-        $self->connection->_deriveQ(
-            %{$opts || {}},
-            from => $self,
-            name => $name,
-            code => sub {
-                my ($element, $stack) = @_;
-                my @stack = @$stack;
-                if (@stack &&
-                    (! $code->($stack->[-1], $element))) 
-                {
-                    # grouping done, so let's push back these elements
-                    return ( [\@stack], [$element] );
-                }
-                return ([], [@stack, $element]);
-            },
+    method group (Str $name, %opts) {
+        my $group_code = $opts{code} or die "No code provided";
+        my $code = sub {
+            my ($element, $stack) = @_;
+            my @stack = @$stack;
+            if (@stack &&
+                (! $group_code->($stack->[-1], $element))) 
+            {
+                # grouping done, so let's push back these elements
+                my $first = $stack[0];
+                return ( [{ %$first, count => scalar @stack, group => \@stack}] , [$element] );
+            }
+            return ( [], [@stack, $element]);
+        };
+
+        $self->connection->deriveQ(
+            $self, $code,
+            { %opts, name => $name },
         );
     }
 }
@@ -391,13 +419,15 @@ class Harold::Queue::Derived extends Harold::Queue {
         lazy    => 1,
         default => sub {
             my $self = shift;
-            Harold::Queue->new(
-                name => $self->stack_name,
+            $self->connection->get_or_createQ(
+                name        => $self->stack_name,
+                tablesource => $self->connection->getRow($self->name)->tablesource,
             );
         },
         handles => {
-            add_to_stack   => 'rpush',
+            add_to_stack   => 'push',
             stack_as_array => 'toArray',
+            clear_stack    => '_clear',
         }
     );
 
@@ -411,8 +441,8 @@ class Harold::Queue::Derived extends Harold::Queue {
 
         # TODO handle case where another client has updated us in the meantime
 
-        my @list  = $self->from->rangeFrom( $self->pos );
-        my $stack = []; # my $stack = [ $self->stack_as_array ];
+        my @list  = $self->from->rangeFrom( $self->pos+1 );
+        my $stack = [ $self->stack_as_array ];
         my $code = $self->code;
         for my $elem (@list) {
             (my $elems, $stack) = $code->($elem, $stack);
@@ -422,10 +452,11 @@ class Harold::Queue::Derived extends Harold::Queue {
             }
         }
         # reset the stack
-        # $self->connection->del( $self->stack_name );
-        # for my $elem (@$stack) {
-            # $self->add_to_stack($elem);
-        # }
+        $self->clear_stack;
+        for my $elem (@$stack) {
+            $self->add_to_stack($elem);
+        }
+
         $self->pos( $new_pos );
         $self->connection->set_pos( $self, $new_pos );
     }
