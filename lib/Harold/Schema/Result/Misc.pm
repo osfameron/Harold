@@ -2,7 +2,7 @@ package Harold::Schema::Result::Misc;
 
 use parent 'DBIx::Class::Core';
 
-__PACKAGE__->load_components(qw/ /);
+__PACKAGE__->load_components(qw/ InflateColumn::Serializer /);
 
 __PACKAGE__->table('misc');
 
@@ -35,6 +35,7 @@ __PACKAGE__->add_columns(
     json => {
         data_type   => 'text',
         is_nullable => 0,
+        serializer_class => 'JSON',
     },
 );
 

@@ -2,7 +2,7 @@ package Harold::Schema::Result::Raw;
 
 use parent 'DBIx::Class::Core';
 
-__PACKAGE__->load_components(qw/ TimeStamp /);
+__PACKAGE__->load_components(qw/ TimeStamp InflateColumn::Serializer /);
 
 __PACKAGE__->table('raw');
 
@@ -26,6 +26,7 @@ __PACKAGE__->add_columns(
     json => {
         data_type   => 'text',
         is_nullable => 0,
+        serializer_class => 'JSON',
     },
 );
 

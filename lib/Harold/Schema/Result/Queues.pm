@@ -40,8 +40,10 @@ __PACKAGE__->add_columns(
 );
 
 __PACKAGE__->set_primary_key('queue_id');
-# __PACKAGE__->add_unique_constraint(['name']);
+__PACKAGE__->add_unique_constraint(['name']);
 
-# __PACKAGE__->belongs_to( from => __PACKAGE__, { 'foreign.queue_id' => 'self.from_queue_id'}, { join_type => 'left' });
+__PACKAGE__->belongs_to( from => __PACKAGE__, 
+    { 'foreign.queue_id' => 'self.from_queue_id'}, 
+    { join_type => 'left' });
 
 1;

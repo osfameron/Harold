@@ -97,10 +97,10 @@ class Harold::Connection::DBIC with Harold::Connection {
             ->find($name)
             or return;
 
-        return $self->_newQ($name, row=>$row);
+        return $self->_newQ($name, $row);
     }
 
-    method createQ (Str :$name, Str :$tablesource, :$from, HashRef :$opts) {
+    method createQ (Str :$name?, Str :$tablesource?, :$from?, HashRef :$opts?) {
         $name //= do {
             require Data::UUID;
             Data::UUID->new->create_hex;
@@ -115,18 +115,17 @@ class Harold::Connection::DBIC with Harold::Connection {
                 $from ? (from => $from, pos => 0) : (),
             }); # will die on duplicate
 
-        return $self->_newQ(
-            name=>$name, 
-            row=>$row, 
-            tablesource=>$tablesource,
-            $from ? (from=>$from) : (), 
-            $opts ? (opts=>$opts) : (),
-        );
+        $row->discard_changes;
+
+        my @params = ($name, $row);
+        if ($opts) { $params[2] = $opts }
+        if ($from) { $params[3] = $from }
+        return $self->_newQ( @params );
     }
 
-    method _newQ (Str :$name!, $row!, Harold::Queue :$from, :$tablesource, HashRef :$opts) {
+    method _newQ (Str $name, $row, HashRef $opts?, Harold::Queue $from?) {
 
-        $tablesource //= $row->tablesource;
+        my $tablesource = $row->tablesource;
 
         my $rs = $self->dbic->resultset($tablesource)
             or die "No such tablesource $tablesource";
@@ -134,7 +133,7 @@ class Harold::Connection::DBIC with Harold::Connection {
         if ($rs->result_source->has_column('queue_id')) {
             $rs = $rs->search({ queue_id => $row->id });
         }
-        $self->_set_rs( $tablesource, $rs );
+        $self->_set_rs( $name, $rs );
 
         if (my $from_row = $row->from) {
             $from //= $self->getQ($from_row->name);
@@ -184,8 +183,12 @@ class Harold::Connection::DBIC with Harold::Connection {
     }
 
     method push (Harold::Queue $queue, HashRef $hash) {
+                use Data::Dumper;
+                local $Data::Dumper::Indent = 1;
+                local $Data::Dumper::Maxdepth = 2;
         my $rs = $self->_get_rs($queue->name)
-            or die "No resultset for queue " . $queue->name;
+            or die "No resultset for queue " . $queue->name
+                . Dumper( $self->_result_sets );
 
         my %data = map { $_ => undef } $rs->result_source->columns;
         my %hash = (%$hash, queue_id => $queue->queue_id);

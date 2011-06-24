@@ -30,5 +30,17 @@ $raw->push({
     status     => 'ok',
 });
 
-my $ev1 = $schema->resultset('Raw')->find(1);
-diag Dumper({ $ev1->get_columns });
+my $ev1 = $schema->resultset('Raw')->search(
+    { event_created => {
+        '<', \"datetime('now', '+1 minute')",
+        '>', \"datetime('now', '-1 minute')",
+      }})->first;
+
+ok $ev1, "Got a result";
+is $ev1->event_id,   1,       'event_id';
+is $ev1->event_type, 'login', 'event_type';
+is_deeply $ev1->json, 
+    {status =>"ok",queue_id=>1,user=>"fred"}, 
+    'json inflated';
+
+done_testing;
