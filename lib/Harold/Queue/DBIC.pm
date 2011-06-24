@@ -88,19 +88,22 @@ class Harold::Connection::DBIC with Harold::Connection {
         },
     );
 
+    method getRow (Str $name) {
+        my $row = $self->dbic->resultset($self->_table_name)
+            ->find({ name => $name });
+    }
+
     method getQ (Str $name) {
         if (my $queue = $self->_getQ($name)) {
             return $queue;
         }
 
-        my $row = $self->dbic->resultset($self->_table_name)
-            ->find($name)
-            or return;
+        my $row = $self->getRow($name) or return;
 
         return $self->_newQ($name, $row);
     }
 
-    method createQ (Str :$name?, Str :$tablesource?, :$from?, HashRef :$opts?) {
+    method createQ (Str :$name?, Str :$tablesource?, :$from?, CodeRef :$code?, HashRef :$opts?) {
         $name //= do {
             require Data::UUID;
             Data::UUID->new->create_hex;
@@ -112,7 +115,8 @@ class Harold::Connection::DBIC with Harold::Connection {
             ->create({
                 name  => $name,
                 tablesource => $tablesource,
-                $from ? (from => $from, pos => 0) : (),
+                $from ? (from_queue_id => $from->queue_id, pos => 0) : (),
+                $code ? (codestring => $self->deflate_code($code)) : (),
             }); # will die on duplicate
 
         $row->discard_changes;
@@ -123,7 +127,7 @@ class Harold::Connection::DBIC with Harold::Connection {
         return $self->_newQ( @params );
     }
 
-    method _newQ (Str $name, $row, HashRef $opts?, Harold::Queue $from?) {
+    method _newQ (Str $name, $row, Maybe[HashRef] $opts?, Harold::Queue $from?) {
 
         my $tablesource = $row->tablesource;
 
@@ -151,7 +155,7 @@ class Harold::Connection::DBIC with Harold::Connection {
             %data = (
                 %data,
                 from       => $from,
-                code       => $self->inflate_code($row->code),
+                code       => $self->inflate_code($row->codestring),
                 pos      => $row->pos,
             );
         }
@@ -164,34 +168,68 @@ class Harold::Connection::DBIC with Harold::Connection {
         return $queue;
     }
 
-    method deriveQ (Harold::Queue :$from!, CodeRef :$code!, Str :$name, HashRef :$opts) {
+    # method createQ (Str :$name?, Str :$tablesource?, :$from?, HashRef :$opts?) {
+    method deriveQ (Harold::Queue $from, CodeRef $code, HashRef $opts? = {}) {
 
         my $queue = $self->createQ(
-            %{ $opts || {} },
-            connection => $self,
+            %$opts,
             from       => $from,
             code       => $code,
-            $name ? ( name => $name ) : (),
         );
 
         $queue->update;
         return $queue;
     }
 
-    method range () {
-        die "EEEK";
+    method range (Harold::Queue $queue, Int $from, Int $to) {
+        my $rs = $self->_get_rs($queue->name)
+            or die "No resultset for queue " . $queue->name;
+
+        my @rows = $rs->search({ 
+            id => {
+                '>=', $from,
+                '<=', $to,
+            }
+        })->all;
+
+        # should do something like HashRefInflator?
+        return map {
+            my %columns = $_->get_inflated_columns;
+            my %json = %{ delete $columns{json} };
+            %columns = (%columns, %json);
+            \%columns;
+        } @rows;
+    }
+    method set_pos (Harold::Queue $queue, Int $pos) {
+        my $name = $queue->name;
+        my $row = $self->getRow($name) or die "No such name $name";
+        $row->update({ pos => $pos });
+    }
+
+    method maxpos (Harold::Queue $queue) {
+        my $rs = $self->_get_rs($queue->name)
+            or die "No resultset for queue " . $queue->name;
+
+        return $rs->search(
+            {},
+            {
+               select => \'max(id)',
+               as     => 'maxid',
+            })->single->get_column('maxid');
     }
 
     method push (Harold::Queue $queue, HashRef $hash) {
-                use Data::Dumper;
-                local $Data::Dumper::Indent = 1;
-                local $Data::Dumper::Maxdepth = 2;
         my $rs = $self->_get_rs($queue->name)
-            or die "No resultset for queue " . $queue->name
-                . Dumper( $self->_result_sets );
+            or die "No resultset for queue " . $queue->name;
 
         my %data = map { $_ => undef } $rs->result_source->columns;
         my %hash = (%$hash, queue_id => $queue->queue_id);
+
+        if (my $id = delete $hash{id}) {
+            # we don't overwrite the primary key, but store it in "from_id"
+            # (unless from_is is already set, in which case we simply pass that value through)
+            $hash{from_id} //= $id;
+        }
 
         for my $key (keys %hash) {
             if (exists $data{$key}) {
@@ -226,16 +264,20 @@ class Harold::Queue {
         handles => [ ],
     );
 
-    method length () {
-        return $self->connection->length($self);
+    method maxpos () {
+        return $self->connection->maxpos($self);
     }
 
     method range (Int $from, Int $to) {
-        $self->connection->range( $self, 0, -1 );
+        $self->connection->range( $self, $from, $to );
+    }
+
+    method rangeFrom (Int $from) {
+        $self->range( $from, $self->maxpos );
     }
 
     method toArray () {
-        $self->range( 0, -1 );
+        $self->range( 0, $self->maxpos );
     }
 
     method _push ($value) {
@@ -246,20 +288,19 @@ class Harold::Queue {
     }
 
     # trivial derivation
-    method copy (Str :$name, HashRef :$opts) {
-        $self->connection->deriveQ(
-            %{$opts || {}},
-            from => $self,
-            name => $name,
-            code => sub {
+    # method deriveQ (Harold::Queue $from, CodeRef $code, Str $name?, HashRef $opts?) {
+    method copy (Str $name?, HashRef $opts?) {
+        my $code = 
+            sub {
                 my ($element, $stack) = @_;
                 return ([$element], $stack);
-            },
-        );
+            };
+
+        $self->connection->deriveQ( $self, $code, { name => $name, %{ $opts || {} }});
     }
 
     method map (Str :$name, CodeRef :$code, HashRef :$opts) {
-        $self->connection->deriveQ(
+        $self->connection->_deriveQ(
             %{$opts || {}},
             from => $self,
             name => $name,
@@ -270,7 +311,7 @@ class Harold::Queue {
         );
     }
     method filter (Str :$name, CodeRef :$predicate, HashRef :$opts) {
-       $self->connection->deriveQ(
+       $self->connection->_deriveQ(
             %{$opts || {}},
             from => $self,
             name => $name,
@@ -283,7 +324,7 @@ class Harold::Queue {
     }
     method concatMap (Str :$name, CodeRef :$code, HashRef :$opts) {
         # coderef must return an arrayref!
-        $self->connection->deriveQ(
+        $self->connection->_deriveQ(
             %{$opts || {}},
             from => $self,
             name => $name,
@@ -298,7 +339,7 @@ class Harold::Queue {
 
     # now let's actually use this stack thing then...
     method group (Str :$name, CodeRef :$code, HashRef :$opts) {
-        $self->connection->deriveQ(
+        $self->connection->_deriveQ(
             %{$opts || {}},
             from => $self,
             name => $name,
@@ -366,27 +407,27 @@ class Harold::Queue::Derived extends Harold::Queue {
 
     method update {
         $self->from->update;
-        my $new_pos = $self->from->length;
+        my $new_pos = $self->from->maxpos;
 
         # TODO handle case where another client has updated us in the meantime
 
-        my @list  = $self->from->lrange( $self->pos, -1 );
-        my $stack = [ $self->stack_as_array ];
+        my @list  = $self->from->rangeFrom( $self->pos );
+        my $stack = []; # my $stack = [ $self->stack_as_array ];
         my $code = $self->code;
         for my $elem (@list) {
             (my $elems, $stack) = $code->($elem, $stack);
             
             for my $new (@{ $elems || [] }) {
-                $self->rpush( $new );
+                $self->_push( $new );
             }
         }
         # reset the stack
-        $self->connection->del( $self->stack_name );
-        for my $elem (@$stack) {
-            $self->add_to_stack($elem);
-        }
+        # $self->connection->del( $self->stack_name );
+        # for my $elem (@$stack) {
+            # $self->add_to_stack($elem);
+        # }
         $self->pos( $new_pos );
-        $self->connection->hset( $self->meta_name, 'pos', $self->from->name );
+        $self->connection->set_pos( $self, $new_pos );
     }
 }
 

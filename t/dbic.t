@@ -37,10 +37,13 @@ my $ev1 = $schema->resultset('Raw')->search(
       }})->first;
 
 ok $ev1, "Got a result";
-is $ev1->event_id,   1,       'event_id';
+is $ev1->id,   1,       'id';
 is $ev1->event_type, 'login', 'event_type';
 is_deeply $ev1->json, 
     {status =>"ok",queue_id=>1,user=>"fred"}, 
     'json inflated';
+
+my $copied = $raw->copy('copy');
+diag Dumper( $copied->toArray );
 
 done_testing;

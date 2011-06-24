@@ -2,7 +2,7 @@ package Harold::Schema::Result::Misc;
 
 use parent 'DBIx::Class::Core';
 
-__PACKAGE__->load_components(qw/ InflateColumn::Serializer /);
+__PACKAGE__->load_components(qw/ InflateColumn::DateTime InflateColumn::Serializer /);
 
 __PACKAGE__->table('misc');
 
@@ -13,7 +13,7 @@ __PACKAGE__->add_columns(
         is_nullable       => 0,
         is_auto_increment => 1,
     },
-    event_id => {
+    from_id => {
         data_type         => 'integer',
         size              => 16,
         is_nullable       => 0,

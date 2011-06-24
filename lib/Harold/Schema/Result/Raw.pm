@@ -7,7 +7,7 @@ __PACKAGE__->load_components(qw/ TimeStamp InflateColumn::Serializer /);
 __PACKAGE__->table('raw');
 
 __PACKAGE__->add_columns(
-    event_id => {
+    id => {
         data_type         => 'integer',
         size              => 16,
         is_nullable       => 0,
@@ -30,6 +30,6 @@ __PACKAGE__->add_columns(
     },
 );
 
-__PACKAGE__->set_primary_key('event_id');
+__PACKAGE__->set_primary_key('id');
 
 1;
